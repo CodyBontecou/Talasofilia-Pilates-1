@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     
     const supabase = createClient()
     
-    // Get the current user using the token
+    // Get user from token
     const { data: { user }, error: userError } = token 
       ? await supabase.auth.getUser(token)
       : await supabase.auth.getUser()
@@ -23,7 +23,10 @@ export async function GET(request: Request) {
     
     console.log('[Dashboard API] Fetching data for user:', user.id)
     
-    // Fetch active purchases (including those with 0 classes remaining)
+    // Use EXACT same query as book-class page
+    const currentDate = new Date().toISOString()
+    console.log('[Dashboard API] Current date for expiry check:', currentDate)
+    
     const { data: purchases, error: purchasesError } = await supabase
       .from('user_purchases')
       .select(`
@@ -34,9 +37,12 @@ export async function GET(request: Request) {
       `)
       .eq('user_id', user.id)
       .eq('payment_status', 'completed')
-      .gte('expiry_date', new Date().toISOString())
+      .gte('expiry_date', currentDate)
       .gte('classes_remaining', 0)
       .order('expiry_date', { ascending: true })
+    
+    console.log('[Dashboard API] Raw purchases query result:', { data: purchases, error: purchasesError })
+    console.log('[Dashboard API] Number of purchases found:', purchases?.length || 0)
     
     if (purchasesError) {
       console.error('[Dashboard API] Purchases error:', purchasesError)

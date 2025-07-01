@@ -181,34 +181,63 @@ export default function DashboardPage() {
       console.log(`[Dashboard ${startTime}] Fetching from API route... (${Date.now() - startTime}ms)`)
       
       // Get auth headers
-      const authHeaders = await (async () => {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        return session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
-      })()
+      // Fetch data directly like book-class page does
+      const supabase = createClient()
       
-      const response = await fetch('/api/dashboard/data', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders
-        },
-      })
+      // Fetch user purchases - same logic as book-class page
+      const currentDate = new Date().toISOString()
       
-      console.log(`[Dashboard ${startTime}] API response received (${Date.now() - startTime}ms), status:`, response.status)
+      const { data: purchases, error: purchasesError } = await supabase
+        .from('user_purchases')
+        .select(`
+          *,
+          class_packages (
+            name
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('payment_status', 'completed')
+        .gte('expiry_date', currentDate)
+        .gte('classes_remaining', 0)
+        .order('expiry_date', { ascending: true })
       
-      if (!response.ok) {
-        throw new Error(`API request failed with status ${response.status}`)
+      if (purchasesError) {
+        throw new Error(`Purchases query failed: ${purchasesError.message}`)
       }
       
-      const data = await response.json()
-      console.log(`[Dashboard ${startTime}] API data parsed (${Date.now() - startTime}ms)`)
+      // Fetch upcoming classes
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('class_bookings')
+        .select(`
+          *,
+          class_schedules (
+            class_name,
+            class_date,
+            start_time,
+            instructor_name
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('booking_status', 'confirmed')
       
-      console.log('[Dashboard] User purchases:', data.purchases)
-      setUserPurchases(data.purchases || [])
+      if (bookingsError) {
+        throw new Error(`Bookings query failed: ${bookingsError.message}`)
+      }
       
-      console.log('[Dashboard] Upcoming classes:', data.upcomingClasses?.length || 0)
-      setUpcomingClasses(data.upcomingClasses || [])
+      // Filter for future classes only
+      const now = new Date()
+      const upcomingClasses = bookings?.filter(booking => {
+        if (!booking.class_schedules) return false
+        const classDate = new Date(`${booking.class_schedules.class_date} ${booking.class_schedules.start_time}`)
+        return classDate > now
+      }) || []
+      
+      console.log(`[Dashboard ${startTime}] Data fetched directly (${Date.now() - startTime}ms)`)
+      
+      setUserPurchases(purchases || [])
+      
+      console.log('[Dashboard] Upcoming classes:', upcomingClasses?.length || 0)
+      setUpcomingClasses(upcomingClasses || [])
       
     } catch (error) {
       console.error(`[Dashboard ${startTime}] Error fetching user data:`, error)
@@ -420,15 +449,6 @@ export default function DashboardPage() {
                     ? 'No active class packages'
                     : `${userPurchases.length} active ${userPurchases.length === 1 ? 'package' : 'packages'}`}
                 </p>
-                {userPurchases.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {userPurchases.map(purchase => (
-                      <p key={purchase.id} className="text-xs text-muted-foreground">
-                        {purchase.class_packages.name}: {purchase.classes_remaining} of {purchase.total_classes} remaining
-                      </p>
-                    ))}
-                  </div>
-                )}
                 <Button
                   asChild
                   variant="outline"
