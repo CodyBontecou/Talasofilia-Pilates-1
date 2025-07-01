@@ -79,8 +79,6 @@ export default function BookClassPage() {
     if (error) {
       console.error('Error fetching purchases:', error)
     } else {
-      console.log('Fetched purchases:', data)
-      console.log('Number of purchases:', data?.length || 0)
       setUserPurchases(data || [])
     }
   }, [user, supabase])
